@@ -172,8 +172,16 @@ reviews.ts` (`submitReview`), `src/components/study/study-session.tsx` (flip-car
   in favor of the live browser+DB verification already done at each phase, which
   is at least as rigorous). See the root README's "Getting from here to deployed"
   for the concrete remaining steps.
-- **Phase 5 (optional stretch):** Quiz/multiple-choice cards, Playwright e2e, FSRS as an
-  alternate scheduler behind the same interface, CSV/Anki export.
+- **Phase 5 (optional stretch):** CSV/Anki export — done (`src/lib/export/card-export.ts`,
+  11 unit tests covering CSV/TSV escaping edge cases; `GET /api/decks/:id/export?format=
+csv|anki` route handler reusing the same auth+ownership pattern as `uploads`/`jobs`;
+  buttons on the deck page). Not attempted: quiz/multiple-choice cards (`CardType.QUIZ_MC`
+  already exists in the schema but is unused — would need LLM-generator, pipeline, and
+  study-UI changes across three layers, a bigger lift than remaining time justified),
+  Playwright e2e (the manual browser+DB verification already done at every phase is
+  comparable rigor for a solo project), FSRS as an alternate scheduler (a real algorithm
+  reimplementation risk with no reference to verify against locally — SM-2 alone is
+  already a strong, correctly-tested talking point).
 
 ## 9. Project Structure
 

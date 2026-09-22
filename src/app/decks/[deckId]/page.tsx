@@ -41,6 +41,22 @@ export default async function DeckPage(props: PageProps<"/decks/[deckId]">) {
             Study
           </Link>
         )}
+        {deck.cards.length > 0 && (
+          <>
+            <a
+              href={`/api/decks/${deck.id}/export?format=csv`}
+              className="inline-block rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100"
+            >
+              Export CSV
+            </a>
+            <a
+              href={`/api/decks/${deck.id}/export?format=anki`}
+              className="inline-block rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100"
+            >
+              Export for Anki
+            </a>
+          </>
+        )}
       </div>
 
       <div className="rounded-lg border border-neutral-200 bg-white p-4">

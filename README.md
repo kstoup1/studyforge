@@ -182,6 +182,12 @@ stats.ts`): cards due today (across all decks), a study streak (consecutive days
   independently unit-tested (13 tests) the same way as `sm2.ts`. Live-verified against
   real seeded/reviewed data: due-today, streak, and mastery % all matched hand
   calculation exactly on the actual dashboard page.
+- **CSV/Anki export** (`src/lib/export/card-export.ts`, `GET /api/decks/[deckId]/export`):
+  pure `cardsToCsv`/`cardsToAnkiTsv` functions (RFC 4180 quoting for CSV; tabs/newlines
+  collapsed to spaces/`<br>` for Anki's unquoted tab-separated plain-text import format),
+  11 unit tests covering the escaping edge cases. The route handler reuses the same
+  auth-then-ownership-scoped-query pattern as `uploads`/`jobs`, verified with the same
+  unauthenticated-401 check. "Export CSV" / "Export for Anki" buttons on the deck page.
 
 ## A real gap: the local production build is unverified
 
