@@ -1,0 +1,175 @@
+// StudyForge — Prisma schema
+// See the plan at C:\Users\DESKTOP-11\.claude\plans\fizzy-forging-milner.md for the
+// full design rationale behind this schema (SM-2 spaced repetition, async generation
+// pipeline via Inngest, append-only review log, etc.)
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------- Auth (Auth.js / NextAuth Prisma Adapter shape) ----------------
+
+model User {
+  id             String      @id @default(cuid())
+  email          String      @unique
+  emailVerified  DateTime?
+  hashedPassword String?
+  name           String?
+  image          String?
+  createdAt      DateTime    @default(now())
+  decks          Deck[]
+  reviewLogs     ReviewLog[]
+  accounts       Account[]
+  sessions       Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------- Core domain ----------------
+
+model Deck {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  noteSets    NoteSet[]
+  cards       Card[]
+
+  @@index([userId])
+}
+
+enum SourceType {
+  PDF
+  PASTED_TEXT
+}
+
+/// One uploaded/pasted source document that cards were (or will be) generated from.
+model NoteSet {
+  id               String          @id @default(cuid())
+  deckId           String
+  deck             Deck            @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  sourceType       SourceType
+  originalFilename String?
+  extractedText    String          @db.Text
+  createdAt        DateTime        @default(now())
+  generationJobs   GenerationJob[]
+  cards            Card[]
+
+  @@index([deckId])
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// Tracks one async Inngest pipeline run (extract -> generate -> persist) for a NoteSet.
+model GenerationJob {
+  id           String    @id @default(cuid())
+  noteSetId    String
+  noteSet      NoteSet   @relation(fields: [noteSetId], references: [id], onDelete: Cascade)
+  status       JobStatus @default(PENDING)
+  stage        String?
+  errorMessage String?
+  cardsCreated Int?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([noteSetId])
+}
+
+enum CardType {
+  BASIC
+  QUIZ_MC
+}
+
+model Card {
+  id         String             @id @default(cuid())
+  deckId     String
+  deck       Deck               @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  noteSetId  String?
+  noteSet    NoteSet?           @relation(fields: [noteSetId], references: [id], onDelete: SetNull)
+  question   String             @db.Text
+  answer     String             @db.Text
+  cardType   CardType           @default(BASIC)
+  createdAt  DateTime           @default(now())
+  scheduling CardScheduleState?
+  reviewLogs ReviewLog[]
+
+  @@index([deckId])
+}
+
+/// Live SM-2 scheduling state, 1:1 with Card. userId is denormalized here so the
+/// hot-path "all due cards for user X" query is a single indexed lookup.
+model CardScheduleState {
+  id             String    @id @default(cuid())
+  cardId         String    @unique
+  card           Card      @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  userId         String
+  easeFactor     Float     @default(2.5)
+  intervalDays   Int       @default(0)
+  repetitions    Int       @default(0)
+  dueAt          DateTime  @default(now())
+  lastReviewedAt DateTime?
+
+  @@index([userId, dueAt])
+}
+
+/// Append-only review history. Never mutated -- powers streaks/mastery stats and is
+/// kept deliberately separate from the mutable CardScheduleState (current-state table
+/// vs. append-only log).
+model ReviewLog {
+  id                String   @id @default(cuid())
+  cardId            String
+  card              Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grade             Int
+  easeFactorAfter   Float
+  intervalDaysAfter Int
+  reviewedAt        DateTime @default(now())
+
+  @@index([userId, reviewedAt])
+}

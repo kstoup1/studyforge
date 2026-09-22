@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +40,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# AI coding assistant reference docs auto-installed by `prisma init` (prisma/skills on
+# GitHub) — vendor tooling for whichever AI assistant is helping on this repo, not
+# application code. Re-fetchable any time via `npx prisma skills` if needed again.
+/.agents/
+/.claude/skills/
+/.windsurf/
+skills-lock.json
