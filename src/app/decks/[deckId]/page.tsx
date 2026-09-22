@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { getDeck } from "@/actions/decks";
 import { DeckActions } from "@/components/decks/deck-actions";
@@ -25,11 +26,20 @@ export default async function DeckPage(props: PageProps<"/decks/[deckId]">) {
         />
       </div>
 
+      <div className="mb-4">
+        <Link
+          href={`/decks/${deck.id}/upload`}
+          className="inline-block rounded-md bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-700"
+        >
+          + Add notes
+        </Link>
+      </div>
+
       <div className="rounded-lg border border-neutral-200 bg-white p-4">
         <h2 className="mb-3 font-medium">Cards ({deck.cards.length})</h2>
         {deck.cards.length === 0 ? (
           <p className="text-sm text-neutral-500">
-            No cards yet. Upload or paste your notes to generate some — coming in Phase 2.
+            No cards yet. Click &quot;Add notes&quot; above to generate some.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">

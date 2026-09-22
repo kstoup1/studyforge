@@ -18,16 +18,19 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@auth/prisma-adapter": "^2.11.3",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "7.10.0",
     "bcryptjs": "^3.0.3",
+    "inngest": "^4.21.0",
     "next": "16.3.6",
     "next-auth": "^5.0.0-beta.32",
     "pg": "^8.23.0",
     "prisma": "7.10.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "unpdf": "^1.8.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -50,6 +53,7 @@
     "@prisma/engines@7.10.0": true,
     "prisma@7.10.0": true,
     "unrs-resolver@1.12.2": true,
-    "esbuild@0.28.2": true
+    "esbuild@0.28.2": true,
+    "protobufjs@7.6.6": true
   }
 }

@@ -152,11 +152,12 @@ Each phase ends in something runnable/demoable — important since this spans we
 - **Phase 1 (~1 week):** Auth.js (Google + Credentials) + Prisma Adapter. Deck
   create/rename/delete via Server Actions, scoped per user. App shell/nav. → real
   persisted multi-user app.
-- **Phase 2 (~1–1.5 weeks):** `NoteSet`/`GenerationJob`/`Card` migrations already exist
-  from Phase 0's schema. Paste-text flow first (simplest — proves the Claude tool-use +
-  Zod path end-to-end), then PDF upload + `unpdf`, then move both onto the Inngest
-  pipeline with job-status polling UI. → paste/upload real notes, watch progress, land
-  on real generated flashcards.
+- **Phase 2 (~1–1.5 weeks):** Done. `NoteSet`/`GenerationJob`/`Card` migrations,
+  `src/lib/llm/` (Claude tool-use + Zod validation + chunking + retry, 32 tests),
+  `src/lib/pdf/extract-text.ts` (unpdf, tested against a real PDF fixture), the full
+  Inngest pipeline, upload UI with job-status polling. Live-tested end-to-end with a
+  real (deliberately invalid) API key, which caught and led to fixing a real retry-
+  classification bug — see the root README's "Why these choices" for the full story.
 - **Phase 3 (~1 week):** `CardScheduleState`/`ReviewLog` migrations already exist. SM-2
   module + tests already done (Phase 0). Study session UI: due cards, flip-card, grade
   buttons → `submitReview`. → full review loop, cards reschedule correctly.

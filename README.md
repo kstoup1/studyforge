@@ -11,8 +11,9 @@ written to double as interview prep, not just documentation.
 
 ## Status
 
-Phase 0 (project foundation) and Phase 1 (auth + deck management) done. Phase 2
-(upload → AI generation pipeline) in progress. See "What's built so far" below.
+Phase 0 (project foundation), Phase 1 (auth + deck management), and Phase 2 (upload →
+AI generation pipeline) done and live-tested end-to-end. Phase 3 (SM-2 study session
+UI) next. See "What's built so far" below.
 
 ## Stack
 
@@ -56,6 +57,24 @@ npm run db:generate  # regenerates the Prisma client into src/generated/prisma
 
 `npx prisma dev ls` / `npx prisma dev stop` manage the local server. In production this
 points at a real hosted Postgres (Neon).
+
+### Background jobs (Inngest)
+
+Flashcard generation runs through Inngest. For local dev, no account is needed:
+
+```bash
+npx inngest-cli dev   # starts a local dev server at http://localhost:8288
+```
+
+Set `INNGEST_DEV="1"` in `.env` so the app's Inngest client talks to that local server
+instead of defaulting to "cloud mode" (which otherwise complains about a missing
+signing key even though nothing needs one locally). With `npm run dev` also running,
+Inngest auto-discovers and syncs the app's functions — no manual registration step.
+
+You'll also need a real `ANTHROPIC_API_KEY` in `.env` (from
+https://console.anthropic.com/) for generation to actually produce flashcards — without
+one, uploads will reach the pipeline and fail with a real (visible, not silent) error
+from Anthropic once they get to the generation step.
 
 ### Running it
 
@@ -115,6 +134,29 @@ npm run test:watch
   `/decks` redirects an unauthenticated visitor to `/sign-in` → sign back in with the
   same password → confirm the renamed deck persisted → delete it → confirm it's gone.
   Full round trip, every step actually clicked through with browser automation.
+- **`src/lib/llm/`** — flashcard generation behind a `FlashcardGenerator` interface
+  (`types.ts`), implemented by `ClaudeFlashcardGenerator` (`claude-generator.ts`) using
+  Anthropic tool-use forced output + Zod validation + text chunking (paragraph-boundary
+  splitting for notes over ~12k characters) + exponential-backoff retry. 32 unit tests,
+  all against a mocked SDK client (never hits a real API in CI) using the SDK's _real_
+  `APIError` class for realistic error shapes.
+- **`src/lib/pdf/extract-text.ts`** — PDF text extraction via `unpdf`, tested against a
+  real (if minimal) hand-built PDF fixture, not mocked.
+- **The Inngest background pipeline** (`src/inngest/functions/generate-flashcards.ts`):
+  `POST /api/uploads` (PDF or pasted text) creates a `NoteSet` + `GenerationJob` and
+  fires an event; the Inngest function runs `load-note-set` → `mark-processing` →
+  `generate-cards` → `persist-cards` as independent steps, updating job status/stage
+  as it goes. `GET /api/jobs/:id` (polled every 2s by the upload UI) reports progress.
+  Deploy target is Vercel + Inngest Cloud; local dev uses `npx inngest-cli dev` (no
+  account needed) — see Setup below.
+- **Live-tested the real pipeline, not just the unit tests**: signed in, created a
+  deck, pasted real text, watched it flow through `POST /api/uploads` → a real Inngest
+  event → real step execution → a **real** call to the Anthropic API (with a
+  deliberately invalid key, since no real key was available in that session) → a real
+  401 → the job correctly landing in `FAILED` with the actual error message shown in
+  the UI. This exercised everything except a successful model response, which the LLM
+  module's 32 unit tests cover separately. **Doing this live testing directly caught a
+  real bug** — see "Why these choices" below.
 
 ## Why these choices
 
@@ -168,6 +210,23 @@ Written so this doubles as interview prep, not just a decision log.
   _different_ library called Better Auth, not Auth.js/NextAuth — it prints
   `BETTER_AUTH_SECRET`, which Auth.js never reads. Generate `AUTH_SECRET` directly
   instead: `node -e "console.log(require('crypto').randomBytes(33).toString('base64'))"`.
+- **A real bug the live pipeline test caught: permanent errors were being retried
+  needlessly.** The LLM module's own retry wrapper (3 attempts, exponential backoff)
+  didn't distinguish a permanent failure (401 invalid key, 403 forbidden, 400 bad
+  request) from a genuinely transient one (429 rate limit, 5xx). A live test with a
+  deliberately-invalid API key showed a single 401 turning into up to 9 real API calls
+  (3 internal retries × Inngest's own 2 function-level retries) and a much longer wait
+  than necessary before the job correctly failed anyway. Fixed with `isPermanentError`
+  (checks the Anthropic SDK's real `APIError.status`: retry only on 429/5xx/network
+  errors, fail fast on everything else) — the kind of bug that's very easy to miss by
+  only unit-testing the happy path and a generic "an error was thrown" case, and a
+  concrete example of why this session prioritized exercising real behavior over
+  trusting code that merely typechecked and looked correct.
+- **`INNGEST_DEV=1` for local dev**: without it, the Inngest client defaults to "cloud
+  mode" and complains about a missing signing key, even though `npx inngest-cli dev` is
+  running locally with no keys needed. Found by actually starting the pipeline and
+  reading the real startup warning, not by assuming the client "just works" once a
+  local dev server is up.
 
 ## Deployment (planned)
 
