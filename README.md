@@ -11,7 +11,8 @@ written to double as interview prep, not just documentation.
 
 ## Status
 
-Phase 0 (project foundation) in progress. See "What's built so far" below.
+Phase 0 (project foundation) and Phase 1 (auth + deck management) done. Phase 2
+(upload → AI generation pipeline) in progress. See "What's built so far" below.
 
 ## Stack
 
@@ -94,8 +95,26 @@ npm run test:watch
   from the actual SM-2 formula (caught and fixed one arithmetic error in the test data
   itself this way, which is exactly the point of writing the tests against independently
   worked-out numbers rather than just "whatever the code outputs").
-- GitHub Actions CI (`.github/workflows/ci.yml`): lint, format check, Prisma generate,
-  unit tests, build — on every push/PR.
+- GitHub Actions CI workflow written (`.github/workflows/ci.yml` on disk): lint, format
+  check, Prisma generate, unit tests, build. **Not currently tracked in git** — the
+  `gh` CLI's saved token lacks the `workflow` scope needed to push files under
+  `.github/workflows/`, and granting it needs interactive browser approval. Re-add with
+  `git add .github/workflows/ci.yml` once `gh auth refresh -h github.com -s workflow`
+  has been approved.
+- **Auth.js v5** (`src/lib/auth.ts`): Google OAuth + Credentials (email/password,
+  bcrypt-hashed) providers, Prisma Adapter, **JWT session strategy** — see "Why these
+  choices" below for why this overrides the original plan's "database sessions" idea.
+  Registration is hand-rolled (`src/actions/auth.ts`'s `registerUser`) since Auth.js's
+  Credentials provider only handles sign-_in_, not account creation.
+- **Deck management** (`src/actions/decks.ts`): create/rename/delete/list, all scoped
+  to the logged-in user via a compound `{id, userId}` Prisma filter (atomic
+  ownership-checked writes, not a separate read-then-check). Pages: `/`, `/sign-up`,
+  `/sign-in`, `/decks`, `/decks/[deckId]`.
+- **Verified live in a real browser, not just "looks right in code"**: sign up → land
+  on `/decks` already authenticated → create a deck → rename it → sign out → confirm
+  `/decks` redirects an unauthenticated visitor to `/sign-in` → sign back in with the
+  same password → confirm the renamed deck persisted → delete it → confirm it's gone.
+  Full round trip, every step actually clicked through with browser automation.
 
 ## Why these choices
 
@@ -130,6 +149,25 @@ Written so this doubles as interview prep, not just a decision log.
   Desktop daemon wasn't running and starting the full GUI app was unnecessary friction;
   Prisma's own managed local dev server does the same job with zero extra setup once
   Prisma itself is installed.
+- **JWT session strategy, not database sessions**: the original plan called for database
+  sessions ("Postgres is already there, simpler revocation"). Turns out Auth.js
+  _requires_ the JWT strategy whenever a Credentials provider is configured — there's no
+  OAuth-redirect-driven flow for password sign-in to hang a database session off of, and
+  it throws (`MissingAdapter`-style error) if you try. Verified against `@auth/core`'s
+  own type definitions and error messages, not assumed. JWT is also just the more common
+  real-world pairing with a Credentials provider, so this isn't a downgrade — it's the
+  actually-supported combination for this feature set, and a good interview answer for
+  "why not database sessions here."
+- **In-page delete confirmation, not `window.confirm()`**: a native `confirm()` dialog
+  blocks the JS thread and can't be styled — replaced with an in-component confirm
+  step (`DeckActions`'s `mode: "confirming-delete"`). Better UX, and it's also what made
+  the delete flow safely testable with browser automation (native dialogs block that
+  too).
+- **Watch for the `auth` npm package name trap**: `npx auth secret` (a command
+  suggested by Auth.js's own docs in some places) actually installs and runs a
+  _different_ library called Better Auth, not Auth.js/NextAuth — it prints
+  `BETTER_AUTH_SECRET`, which Auth.js never reads. Generate `AUTH_SECRET` directly
+  instead: `node -e "console.log(require('crypto').randomBytes(33).toString('base64'))"`.
 
 ## Deployment (planned)
 
