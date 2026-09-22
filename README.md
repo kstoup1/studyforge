@@ -11,9 +11,11 @@ written to double as interview prep, not just documentation.
 
 ## Status
 
-Phases 0-3 done and live-tested end-to-end: project foundation, auth + deck
-management, the upload → AI generation pipeline, and the SM-2 study session. Phase 4
-(dashboard, polish, deploy) next. See "What's built so far" below.
+Phases 0-3 done and live-tested end-to-end. Phase 4's dashboard is done and
+live-verified too. Remaining: deploying to Vercel/Neon (needs your own accounts --
+see "Getting from here to deployed" below) and, optionally, a couple of Playwright
+e2e tests (Phase 5 stretch). See "What's built so far" for the full list, and
+**"A real gap: the local production build is unverified"** below before you deploy.
 
 ## Stack
 
@@ -172,6 +174,68 @@ cards.ts`'s `getDueCards`, `src/components/study/study-session.tsx`): a thin
   2.5, interval 1 day, repetitions 0→1; grade 0 → ease factor dropped to 1.7 (the
   same value hand-derived in the SM-2 test suite), interval reset to 1, repetitions
   stayed 0. A third, not-yet-due card was correctly left untouched throughout.
+- **Dashboard** (`/dashboard`, `src/actions/dashboard.ts`, `src/lib/dashboard/
+stats.ts`): cards due today (across all decks), a study streak (consecutive days
+  with at least one review -- "haven't reviewed yet today" doesn't break a streak
+  from yesterday, only a full skipped day does), and per-deck mastery % (cards with
+  2+ successful repetitions or a 21+ day interval). `stats.ts` is pure and
+  independently unit-tested (13 tests) the same way as `sm2.ts`. Live-verified against
+  real seeded/reviewed data: due-today, streak, and mastery % all matched hand
+  calculation exactly on the actual dashboard page.
+
+## A real gap: the local production build is unverified
+
+Be aware of this before deploying. `npm run build` (Turbopack, the real target CI and
+Vercel use) can't run at all on this dev machine -- see the Application Control policy
+note above. The `--webpack` fallback gets further but hits a separate crash (a
+`WasmHash` `TypeError` deep in webpack's own bundled code, triggered specifically
+while content-hashing the large generated Prisma client under the WASM-only SWC
+fallback) partway through the production build. **This means no production build has
+successfully completed locally in this session** — only `next dev` (which compiles
+every file individually via the same SWC/WASM transform and has never errored) and
+`vitest`/`tsc`/`eslint` (all clean) have actually run.
+
+This is very likely a non-issue in practice: the crash is inside webpack's own
+internals during a bundling step Turbopack doesn't use at all, and CI/Vercel run on
+normal Linux with real native bindings, so they use actual Turbopack, not this
+fallback path. But it genuinely hasn't been verified, and "very likely fine" isn't
+the same as tested. **First thing to do once `.github/workflows/ci.yml` is pushed
+(see below) or once you deploy to Vercel: watch that first build closely.** If it
+fails, that's real, new information -- not something this session already ruled out.
+
+## Getting from here to deployed
+
+Everything above runs and has been tested locally. To go from that to a live,
+deployed app, you'll need to do these yourself (all need your own accounts/identity,
+which is why they were left for you rather than attempted automatically):
+
+1. **Push the CI workflow.** `.github/workflows/ci.yml` exists on disk but isn't
+   tracked in git yet -- the `gh` CLI's saved token lacks the `workflow` scope. Run
+   `gh auth refresh -h github.com -s workflow` (approves in your browser), then
+   `git add .github/workflows/ci.yml && git commit -m "Add CI workflow" && git push`.
+   This is also your first real signal on the Turbopack build question above.
+2. **Get a real `ANTHROPIC_API_KEY`** from https://console.anthropic.com/ and put it
+   in `.env` (local) and your Vercel project's env vars (deployed) -- generation has
+   only been tested against a mocked SDK client and, live, against a deliberately
+   invalid key (which correctly failed). A real key has never been used in this
+   session, so a real successful generation is the first thing worth trying once you
+   have one.
+3. **Create a Neon Postgres database** (https://neon.tech/, free tier) for
+   production. Run `npm run db:migrate` against it (or `prisma migrate deploy` in
+   CI/CD) to apply the schema.
+4. **Deploy to Vercel** (https://vercel.com/, free tier): import the GitHub repo, set
+   `DATABASE_URL` (Neon), `ANTHROPIC_API_KEY`, `AUTH_SECRET` (reuse or regenerate),
+   `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` (step 5) and `INNGEST_EVENT_KEY`/
+   `INNGEST_SIGNING_KEY` (step 6) as environment variables.
+5. **(Optional) Set up Google OAuth** at
+   https://console.cloud.google.com/apis/credentials if you want "Continue with
+   Google" to actually work -- email/password sign-in works fully without it.
+6. **Set up Inngest Cloud** (https://app.inngest.com/, free tier) for production
+   background jobs -- connect it to your deployed Vercel URL and set the two
+   `INNGEST_*` env vars from step 4.
+7. **Smoke-test the deployed app end-to-end**: sign up, create a deck, paste real
+   notes, confirm real flashcards actually generate (the one thing never tested with
+   a real API key in this session), study them, check the dashboard.
 
 ## Why these choices
 
@@ -243,7 +307,8 @@ Written so this doubles as interview prep, not just a decision log.
   reading the real startup warning, not by assuming the client "just works" once a
   local dev server is up.
 
-## Deployment (planned)
+## Deployment
 
-Vercel (app) + Neon (Postgres) + Inngest Cloud (background jobs). See `docs/PLAN.md`
-§10 for required environment variables.
+See "Getting from here to deployed" above for the concrete steps. Target stack:
+Vercel (app) + Neon (Postgres) + Inngest Cloud (background jobs) -- see
+`docs/PLAN.md` §10 for the full environment variable list.

@@ -164,9 +164,14 @@ reviews.ts` (`submitReview`), `src/components/study/study-session.tsx` (flip-car
   Inngest pipeline). Live-tested with real graded reviews against a seeded deck
   (`scripts/seed-test-cards.ts`) — DB state after grading matched the SM-2 module's
   independently-verified math exactly.
-- **Phase 4 (~1 week):** Dashboard (due today, per-deck mastery %, streak, simple
-  charts). UI polish (empty/loading/error states, responsiveness). Integration tests.
-  Deploy to Vercel + Neon prod, verify all env vars. → live public URL.
+- **Phase 4 (~1 week):** Dashboard done (`/dashboard`, `src/lib/dashboard/stats.ts` --
+  due today, streak, per-deck mastery %, 13 unit tests, live-verified against real
+  data). Basic empty/error states already present from earlier phases. Remaining:
+  deploy to Vercel + Neon (needs the user's own accounts, out of scope for
+  unsupervised work) and optionally Server-Action-level integration tests (skipped
+  in favor of the live browser+DB verification already done at each phase, which
+  is at least as rigorous). See the root README's "Getting from here to deployed"
+  for the concrete remaining steps.
 - **Phase 5 (optional stretch):** Quiz/multiple-choice cards, Playwright e2e, FSRS as an
   alternate scheduler behind the same interface, CSV/Anki export.
 

@@ -15,6 +15,9 @@ export function NavBar() {
         <nav className="flex items-center gap-4 text-sm">
           {status === "authenticated" ? (
             <>
+              <Link href="/dashboard" className="text-neutral-700 hover:text-neutral-900">
+                Dashboard
+              </Link>
               <Link href="/decks" className="text-neutral-700 hover:text-neutral-900">
                 My decks
               </Link>
