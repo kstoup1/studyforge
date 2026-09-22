@@ -26,13 +26,21 @@ export default async function DeckPage(props: PageProps<"/decks/[deckId]">) {
         />
       </div>
 
-      <div className="mb-4">
+      <div className="mb-4 flex gap-2">
         <Link
           href={`/decks/${deck.id}/upload`}
           className="inline-block rounded-md bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-700"
         >
           + Add notes
         </Link>
+        {deck.cards.length > 0 && (
+          <Link
+            href={`/decks/${deck.id}/study`}
+            className="inline-block rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100"
+          >
+            Study
+          </Link>
+        )}
       </div>
 
       <div className="rounded-lg border border-neutral-200 bg-white p-4">

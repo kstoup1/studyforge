@@ -158,9 +158,12 @@ Each phase ends in something runnable/demoable — important since this spans we
   Inngest pipeline, upload UI with job-status polling. Live-tested end-to-end with a
   real (deliberately invalid) API key, which caught and led to fixing a real retry-
   classification bug — see the root README's "Why these choices" for the full story.
-- **Phase 3 (~1 week):** `CardScheduleState`/`ReviewLog` migrations already exist. SM-2
-  module + tests already done (Phase 0). Study session UI: due cards, flip-card, grade
-  buttons → `submitReview`. → full review loop, cards reschedule correctly.
+- **Phase 3 (~1 week):** Done. `src/actions/cards.ts` (`getDueCards`), `src/actions/
+reviews.ts` (`submitReview`), `src/components/study/study-session.tsx` (flip-card,
+  4-button grading). Every `Card` gets a `CardScheduleState` at creation time (in the
+  Inngest pipeline). Live-tested with real graded reviews against a seeded deck
+  (`scripts/seed-test-cards.ts`) — DB state after grading matched the SM-2 module's
+  independently-verified math exactly.
 - **Phase 4 (~1 week):** Dashboard (due today, per-deck mastery %, streak, simple
   charts). UI polish (empty/loading/error states, responsiveness). Integration tests.
   Deploy to Vercel + Neon prod, verify all env vars. → live public URL.

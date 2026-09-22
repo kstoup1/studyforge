@@ -21,12 +21,13 @@ export const generateFlashcards = inngest.createFunction(
     const noteSet = await step.run("load-note-set", async () => {
       const job = await prisma.generationJob.findUniqueOrThrow({
         where: { id: generationJobId },
-        include: { noteSet: true },
+        include: { noteSet: { include: { deck: true } } },
       });
       return {
         deckId: job.noteSet.deckId,
         noteSetId: job.noteSet.id,
         text: job.noteSet.extractedText,
+        userId: job.noteSet.deck.userId,
       };
     });
 
@@ -44,20 +45,27 @@ export const generateFlashcards = inngest.createFunction(
       });
 
       await step.run("persist-cards", async () => {
-        await prisma.$transaction([
-          prisma.card.createMany({
+        // A callback transaction (not the array form) because CardScheduleState rows
+        // need the ids createManyAndReturn just handed back -- every card gets one at
+        // creation time so downstream "due cards" queries never have to null-check or
+        // lazily create scheduling state.
+        await prisma.$transaction(async (tx) => {
+          const created = await tx.card.createManyAndReturn({
             data: cards.map((card) => ({
               deckId: noteSet.deckId,
               noteSetId: noteSet.noteSetId,
               question: card.question,
               answer: card.answer,
             })),
-          }),
-          prisma.generationJob.update({
+          });
+          await tx.cardScheduleState.createMany({
+            data: created.map((card) => ({ cardId: card.id, userId: noteSet.userId })),
+          });
+          await tx.generationJob.update({
             where: { id: generationJobId },
             data: { status: "COMPLETED", stage: null, cardsCreated: cards.length },
-          }),
-        ]);
+          });
+        });
       });
 
       return { cardsCreated: cards.length };

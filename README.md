@@ -11,9 +11,9 @@ written to double as interview prep, not just documentation.
 
 ## Status
 
-Phase 0 (project foundation), Phase 1 (auth + deck management), and Phase 2 (upload →
-AI generation pipeline) done and live-tested end-to-end. Phase 3 (SM-2 study session
-UI) next. See "What's built so far" below.
+Phases 0-3 done and live-tested end-to-end: project foundation, auth + deck
+management, the upload → AI generation pipeline, and the SM-2 study session. Phase 4
+(dashboard, polish, deploy) next. See "What's built so far" below.
 
 ## Stack
 
@@ -157,6 +157,21 @@ npm run test:watch
   the UI. This exercised everything except a successful model response, which the LLM
   module's 32 unit tests cover separately. **Doing this live testing directly caught a
   real bug** — see "Why these choices" below.
+- **The study session** (`src/actions/reviews.ts`'s `submitReview`, `src/actions/
+cards.ts`'s `getDueCards`, `src/components/study/study-session.tsx`): a thin
+  Server Action wraps the already-tested pure `computeNextSchedule` — load
+  `CardScheduleState`, call it, write the result back + an append-only `ReviewLog`
+  row, atomically. Every `Card` gets a `CardScheduleState` created alongside it in
+  the Inngest pipeline's `persist-cards` step (via `createManyAndReturn`), so
+  "due cards" queries never have to null-check or lazily create scheduling state.
+- **Live-tested the full study loop with real graded reviews, not just the SM-2 unit
+  tests**: seeded a deck with real cards (`scripts/seed-test-cards.ts` — no API key
+  needed), reviewed one with "Good" (grade 4) and one with "Again" (grade 0) through
+  the actual browser UI, then queried the database directly. Results matched the
+  pure function's independently-verified math exactly: grade 4 → ease factor stayed
+  2.5, interval 1 day, repetitions 0→1; grade 0 → ease factor dropped to 1.7 (the
+  same value hand-derived in the SM-2 test suite), interval reset to 1, repetitions
+  stayed 0. A third, not-yet-due card was correctly left untouched throughout.
 
 ## Why these choices
 
