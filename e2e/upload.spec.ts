@@ -62,6 +62,11 @@ test("pasted notes go through the background pipeline to a visible final state",
   const failed = page.getByText("Generation failed.");
   await expect(done.or(failed)).toBeVisible({ timeout: 120_000 });
   if (await failed.isVisible()) {
+    // A readable reason, never a raw SDK/JSON dump.
+    const reason = page.locator("p.text-red-700");
+    await expect(reason).toBeVisible();
+    await expect(reason).not.toContainText("{");
+    await expect(reason).toContainText(/API key|credits|busy|overloaded|Try again/);
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByPlaceholder("Paste your lecture notes here…")).toBeVisible();
   }

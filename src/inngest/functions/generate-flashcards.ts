@@ -2,6 +2,7 @@ import { z } from "zod";
 import { inngest, NOTES_UPLOADED_EVENT } from "@/inngest/client";
 import { prisma } from "@/lib/db";
 import { getFlashcardGenerator } from "@/lib/llm";
+import { describeGenerationError } from "@/lib/llm/describe-error";
 
 const eventDataSchema = z.object({ generationJobId: z.string().min(1) });
 
@@ -70,6 +71,7 @@ export const generateFlashcards = inngest.createFunction(
 
       return { cardsCreated: cards.length };
     } catch (err) {
+      console.error("Flashcard generation failed", err);
       // Not wrapped in step.run: this must run even after the function's own step
       // retries are exhausted, so the job is never left stuck in PROCESSING forever.
       await prisma.generationJob.update({
@@ -77,7 +79,9 @@ export const generateFlashcards = inngest.createFunction(
         data: {
           status: "FAILED",
           stage: null,
-          errorMessage: err instanceof Error ? err.message : String(err),
+          // Friendly text for the UI; the raw error still goes to the logs and to
+          // Inngest's dashboard via the rethrow below.
+          errorMessage: describeGenerationError(err),
         },
       });
       throw err; // still surface it to Inngest's own dashboard/retry accounting
