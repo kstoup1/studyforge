@@ -7,9 +7,15 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 
 const credentialsSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().toLowerCase().email(),
   password: z.string().min(8),
 });
+
+/** Google sign-in is optional: without credentials the provider is left out entirely
+ * (and the sign-in page hides its button) instead of offering a button that fails. */
+export const googleAuthEnabled = Boolean(
+  process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET,
+);
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
@@ -20,10 +26,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // here for Google OAuth account linking and user records.
   session: { strategy: "jwt" },
   providers: [
-    Google({
-      clientId: process.env.AUTH_GOOGLE_ID,
-      clientSecret: process.env.AUTH_GOOGLE_SECRET,
-    }),
+    ...(googleAuthEnabled
+      ? [
+          Google({
+            clientId: process.env.AUTH_GOOGLE_ID,
+            clientSecret: process.env.AUTH_GOOGLE_SECRET,
+          }),
+        ]
+      : []),
     Credentials({
       credentials: {
         email: { label: "Email", type: "email" },
@@ -34,7 +44,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!parsed.success) return null;
         const { email, password } = parsed.data;
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        // Case-insensitive to match accounts created before emails were lowercased.
+        const user = await prisma.user.findFirst({
+          where: { email: { equals: email, mode: "insensitive" } },
+        });
         if (!user?.hashedPassword) return null;
 
         const valid = await bcrypt.compare(password, user.hashedPassword);

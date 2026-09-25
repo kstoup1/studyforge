@@ -50,9 +50,40 @@ describe("chunkText", () => {
     expect(chunks[1]).toBe(c);
   });
 
-  it("keeps a single paragraph longer than maxChars whole rather than splitting it", () => {
-    const huge = "X".repeat(200);
-    expect(chunkText(huge, 100)).toEqual([huge]);
+  it("never returns a chunk longer than maxChars, even with no break points", () => {
+    const huge = "X".repeat(250);
+    const chunks = chunkText(huge, 100);
+    expect(chunks).toEqual(["X".repeat(100), "X".repeat(100), "X".repeat(50)]);
+  });
+
+  it("splits PDF-style text (single newlines, no blank lines) on line breaks", () => {
+    // unpdf's mergePages output: one line per text run, no paragraph gaps. This used
+    // to come back as a single chunk the size of the whole PDF.
+    const lines = Array.from({ length: 30 }, (_, i) => `Line ${i} of the lecture notes.`);
+    const chunks = chunkText(lines.join("\n"), 200);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(200);
+    expect(chunks.join("\n")).toBe(lines.join("\n")); // nothing lost or reordered
+  });
+
+  it("falls back to sentence boundaries for one long line", () => {
+    const sentence = "Mitochondria produce ATP through cellular respiration.";
+    const text = Array.from({ length: 10 }, () => sentence).join(" ");
+    const chunks = chunkText(text, 120);
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(120);
+      expect(chunk.endsWith(".")).toBe(true); // never cut mid-sentence
+    }
+    expect(chunks.join(" ")).toBe(text);
+  });
+
+  it("keeps paragraph breaks between paragraphs that land in the same chunk", () => {
+    const a = "A".repeat(150);
+    const b = "B".repeat(20);
+    const c = "C".repeat(20);
+    // `a` alone is too big and gets hard-split; b and c still pack with "\n\n".
+    const chunks = chunkText(`${a}\n\n${b}\n\n${c}`, 100);
+    expect(chunks[chunks.length - 1]).toBe(`${"A".repeat(50)}\n\n${b}\n\n${c}`);
   });
 });
 

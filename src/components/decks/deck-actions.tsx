@@ -20,13 +20,26 @@ export function DeckActions({
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState(initialDescription);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function switchMode(next: Mode) {
+    setError(null);
+    setMode(next);
+  }
 
   async function handleRename() {
     setBusy(true);
+    setError(null);
     try {
-      await renameDeck(deckId, { title, description: description || undefined });
+      const result = await renameDeck(deckId, { title, description });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       setMode("view");
       router.refresh();
+    } catch {
+      setError("Couldn't save. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -34,9 +47,17 @@ export function DeckActions({
 
   async function handleDelete() {
     setBusy(true);
+    setError(null);
     try {
-      await deleteDeck(deckId);
+      const result = await deleteDeck(deckId);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       router.push("/decks");
+      router.refresh();
+    } catch {
+      setError("Couldn't delete. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -46,25 +67,36 @@ export function DeckActions({
     return (
       <div className="flex flex-col gap-2 rounded-md border border-neutral-200 p-3">
         <input
+          aria-label="Deck title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
         />
         <input
+          aria-label="Description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Description"
           className="rounded-md border border-neutral-300 px-2 py-1 text-sm"
         />
+        {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2">
           <button
             onClick={handleRename}
             disabled={busy}
             className="rounded-md bg-neutral-900 px-3 py-1 text-sm text-white disabled:opacity-50"
           >
-            Save
+            {busy ? "Saving…" : "Save"}
           </button>
-          <button onClick={() => setMode("view")} className="rounded-md px-3 py-1 text-sm">
+          <button
+            onClick={() => {
+              // Discard unsaved edits so reopening the editor shows the saved values.
+              setTitle(initialTitle);
+              setDescription(initialDescription);
+              switchMode("view");
+            }}
+            className="rounded-md px-3 py-1 text-sm"
+          >
             Cancel
           </button>
         </div>
@@ -78,6 +110,7 @@ export function DeckActions({
         <p className="text-sm text-red-800">
           Delete &quot;{initialTitle}&quot;? This can&apos;t be undone.
         </p>
+        {error && <p className="text-sm text-red-700">{error}</p>}
         <div className="flex gap-2">
           <button
             onClick={handleDelete}
@@ -87,7 +120,7 @@ export function DeckActions({
             {busy ? "Deleting…" : "Yes, delete it"}
           </button>
           <button
-            onClick={() => setMode("view")}
+            onClick={() => switchMode("view")}
             disabled={busy}
             className="rounded-md px-3 py-1 text-sm"
           >
@@ -101,13 +134,13 @@ export function DeckActions({
   return (
     <div className="flex gap-2">
       <button
-        onClick={() => setMode("editing")}
+        onClick={() => switchMode("editing")}
         className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
       >
         Rename
       </button>
       <button
-        onClick={() => setMode("confirming-delete")}
+        onClick={() => switchMode("confirming-delete")}
         className="rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
       >
         Delete

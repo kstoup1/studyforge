@@ -72,3 +72,33 @@ describe("computeMasteryPercent", () => {
     expect(computeMasteryPercent(cards)).toBe(100);
   });
 });
+
+describe("computeStreak in the user's time zone", () => {
+  const LA = "America/Los_Angeles";
+
+  it("counts evening reviews on consecutive local days that are 2 UTC days apart", () => {
+    // Mon 8am PDT (Mon 15:00 UTC) and Tue 6pm PDT (Wed 01:00 UTC): consecutive days
+    // for the student, but Mon/Wed in UTC -- this used to report a broken streak.
+    const mondayMorning = new Date("2026-09-21T15:00:00.000Z");
+    const tuesdayEvening = new Date("2026-09-23T01:00:00.000Z");
+    const tuesdayNight = new Date("2026-09-23T05:00:00.000Z"); // 10pm Tue PDT
+    expect(computeStreak([mondayMorning, tuesdayEvening], tuesdayNight, "UTC")).toBe(1);
+    expect(computeStreak([mondayMorning, tuesdayEvening], tuesdayNight, LA)).toBe(2);
+  });
+
+  it("does not count a late-evening review as 'today' for the next local morning", () => {
+    // 11pm Sun PDT review, checked 9am Mon PDT: still yesterday, so streak = 1.
+    const sundayNight = new Date("2026-09-21T06:00:00.000Z");
+    const mondayMorning = new Date("2026-09-21T16:00:00.000Z");
+    expect(computeStreak([sundayNight], mondayMorning, LA)).toBe(1);
+  });
+
+  it("keeps counting across a DST change", () => {
+    const reviews = [
+      new Date("2026-11-01T02:00:00.000Z"), // Oct 31 7pm PDT
+      new Date("2026-11-01T20:00:00.000Z"), // Nov 1 noon PST (after fall back)
+      new Date("2026-11-02T20:00:00.000Z"), // Nov 2 noon PST
+    ];
+    expect(computeStreak(reviews, new Date("2026-11-02T21:00:00.000Z"), LA)).toBe(3);
+  });
+});

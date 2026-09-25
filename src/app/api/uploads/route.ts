@@ -3,10 +3,9 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { extractPdfText, PdfExtractionError } from "@/lib/pdf/extract-text";
 import { inngest, NOTES_UPLOADED_EVENT } from "@/inngest/client";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/uploads/limits";
 
 export const runtime = "nodejs"; // PDF parsing needs Node APIs, not the Edge runtime
-
-const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15MB, per docs/PLAN.md §6
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -14,7 +13,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const form = await req.formData();
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    return NextResponse.json({ error: "Expected a multipart form upload" }, { status: 400 });
+  }
   const deckId = form.get("deckId");
   if (typeof deckId !== "string" || !deckId) {
     return NextResponse.json({ error: "deckId is required" }, { status: 400 });
@@ -35,8 +39,11 @@ export async function POST(req: Request) {
   let originalFilename: string | null = null;
 
   if (file instanceof File) {
-    if (file.size > MAX_FILE_BYTES) {
-      return NextResponse.json({ error: "File too large (max 15MB)" }, { status: 413 });
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return NextResponse.json(
+        { error: `File too large (max ${MAX_UPLOAD_LABEL})` },
+        { status: 413 },
+      );
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
     try {
@@ -64,7 +71,21 @@ export async function POST(req: Request) {
     data: { noteSetId: noteSet.id, status: "PENDING" },
   });
 
-  await inngest.send({ name: NOTES_UPLOADED_EVENT, data: { generationJobId: job.id } });
+  try {
+    await inngest.send({ name: NOTES_UPLOADED_EVENT, data: { generationJobId: job.id } });
+  } catch (err) {
+    // If the event never reaches Inngest, nothing will ever pick this job up -- mark
+    // it failed now instead of leaving it PENDING forever with the client polling.
+    console.error("Failed to enqueue flashcard generation", err);
+    await prisma.generationJob.update({
+      where: { id: job.id },
+      data: { status: "FAILED", errorMessage: "Couldn't start generation" },
+    });
+    return NextResponse.json(
+      { error: "Couldn't start flashcard generation right now. Please try again in a minute." },
+      { status: 503 },
+    );
+  }
 
   return NextResponse.json({ jobId: job.id }, { status: 202 });
 }

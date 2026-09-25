@@ -4,36 +4,39 @@
  * fully deterministic and unit-tested independently of any database.
  */
 
-function dayKey(date: Date): string {
-  return date.toISOString().slice(0, 10); // YYYY-MM-DD (UTC) -- deterministic for tests
-}
+import { localDayKey, previousDayKey } from "@/lib/dates/time-zone";
 
 /**
- * Consecutive days (ending today or yesterday) with at least one review.
- * Reviewing "later today" doesn't retroactively break a streak from yesterday --
- * the streak only breaks once a full day passes with zero reviews. `reviewDates`
- * can be in any order and contain multiple reviews per day.
+ * Consecutive days (ending today or yesterday) with at least one review, where
+ * "day" is the calendar day in the user's `timeZone` (default UTC). Reviewing
+ * "later today" doesn't retroactively break a streak from yesterday -- the streak
+ * only breaks once a full day passes with zero reviews. `reviewDates` can be in any
+ * order and contain multiple reviews per day.
  */
-export function computeStreak(reviewDates: Date[], now: Date = new Date()): number {
+export function computeStreak(
+  reviewDates: Date[],
+  now: Date = new Date(),
+  timeZone: string = "UTC",
+): number {
   if (reviewDates.length === 0) return 0;
 
-  const days = new Set(reviewDates.map(dayKey));
-  const today = dayKey(now);
-  const yesterday = dayKey(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+  const days = new Set(reviewDates.map((d) => localDayKey(d, timeZone)));
+  const today = localDayKey(now, timeZone);
+  const yesterday = previousDayKey(today);
 
-  let cursor: Date;
+  let cursor: string;
   if (days.has(today)) {
-    cursor = now;
+    cursor = today;
   } else if (days.has(yesterday)) {
-    cursor = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    cursor = yesterday;
   } else {
     return 0;
   }
 
   let streak = 0;
-  while (days.has(dayKey(cursor))) {
+  while (days.has(cursor)) {
     streak += 1;
-    cursor = new Date(cursor.getTime() - 24 * 60 * 60 * 1000);
+    cursor = previousDayKey(cursor);
   }
   return streak;
 }

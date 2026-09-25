@@ -12,9 +12,20 @@ async function requireUserId(): Promise<string> {
 }
 
 const deckInputSchema = z.object({
-  title: z.string().trim().min(1, "Title is required").max(200),
-  description: z.string().trim().max(2000).optional(),
+  title: z.string().trim().min(1, "Title is required").max(200, "Title is too long"),
+  // Blank means "no description" -- stored as null so clearing it on rename works
+  // (it used to be sent as undefined, which Prisma treats as "leave unchanged").
+  description: z
+    .string()
+    .trim()
+    .max(2000, "Description is too long")
+    .optional()
+    .transform((d) => d || null),
 });
+
+/** Returned instead of thrown: Next.js strips thrown Server Action error messages in
+ * production builds, so validation errors have to come back as data to be shown. */
+export type DeckActionResult = { ok: true } | { ok: false; error: string };
 
 export async function listDecks() {
   const userId = await requireUserId();
@@ -31,21 +42,25 @@ export async function getDeck(deckId: string) {
   // guessed from another account's URL never even reaches a truthy result.
   return prisma.deck.findFirst({
     where: { id: deckId, userId },
-    include: { cards: true, noteSets: true },
+    include: { cards: { orderBy: { createdAt: "asc" } }, noteSets: true },
   });
 }
 
-export async function createDeck(input: unknown) {
+export async function createDeck(input: unknown): Promise<DeckActionResult> {
   const userId = await requireUserId();
-  const { title, description } = deckInputSchema.parse(input);
-  const deck = await prisma.deck.create({ data: { userId, title, description } });
+  const parsed = deckInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+  const { title, description } = parsed.data;
+  await prisma.deck.create({ data: { userId, title, description } });
   revalidatePath("/decks");
-  return deck;
+  return { ok: true };
 }
 
-export async function renameDeck(deckId: string, input: unknown) {
+export async function renameDeck(deckId: string, input: unknown): Promise<DeckActionResult> {
   const userId = await requireUserId();
-  const { title, description } = deckInputSchema.parse(input);
+  const parsed = deckInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+  const { title, description } = parsed.data;
   // updateMany + a {id, userId} where clause is one atomic ownership-checked write --
   // no separate "does this deck belong to this user" read followed by a write that
   // could race with a delete, and no risk of updating someone else's row.
@@ -53,14 +68,16 @@ export async function renameDeck(deckId: string, input: unknown) {
     where: { id: deckId, userId },
     data: { title, description },
   });
-  if (result.count === 0) throw new Error("Deck not found");
+  if (result.count === 0) return { ok: false, error: "Deck not found" };
   revalidatePath("/decks");
   revalidatePath(`/decks/${deckId}`);
+  return { ok: true };
 }
 
-export async function deleteDeck(deckId: string) {
+export async function deleteDeck(deckId: string): Promise<DeckActionResult> {
   const userId = await requireUserId();
   const result = await prisma.deck.deleteMany({ where: { id: deckId, userId } });
-  if (result.count === 0) throw new Error("Deck not found");
+  if (result.count === 0) return { ok: false, error: "Deck not found" };
   revalidatePath("/decks");
+  return { ok: true };
 }

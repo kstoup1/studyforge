@@ -16,12 +16,16 @@ export function CreateDeckForm() {
     setError(null);
     setSubmitting(true);
     try {
-      await createDeck({ title, description: description || undefined });
+      const result = await createDeck({ title, description });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
       setTitle("");
       setDescription("");
       router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+    } catch {
+      setError("Couldn't create the deck. Check your connection and try again.");
     } finally {
       setSubmitting(false);
     }

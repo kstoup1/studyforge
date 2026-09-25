@@ -11,11 +11,13 @@ written to double as interview prep, not just documentation.
 
 ## Status
 
-Phases 0-3 done and live-tested end-to-end. Phase 4's dashboard is done and
-live-verified too. Remaining: deploying to Vercel/Neon (needs your own accounts --
-see "Getting from here to deployed" below) and, optionally, a couple of Playwright
-e2e tests (Phase 5 stretch). See "What's built so far" for the full list, and
-**"A real gap: the local production build is unverified"** below before you deploy.
+Phases 0-5 done: auth, decks, the AI generation pipeline, SM-2 study sessions, the
+dashboard, and CSV/Anki export. 93 unit tests (Vitest) plus 7 Playwright end-to-end
+tests, all passing -- and the e2e suite passes against a real **production build**
+(`next build` + `next start`), not just the dev server. Remaining: deploying to
+Vercel/Neon (needs your own accounts -- see "Getting from here to deployed" below).
+See "What's built so far" for the full list and "Hardening pass" for the bugs that
+testing turned up and how each was fixed.
 
 ## Stack
 
@@ -30,7 +32,7 @@ e2e tests (Phase 5 stretch). See "What's built so far" for the full list, and
   durable, retryable, step-based pipeline instead of blocking a request — see "Why
   these choices" below).
 - **Auth.js (NextAuth) v5** with the Prisma Adapter — Google OAuth + email/password.
-- **Vitest** for tests.
+- **Vitest** for unit tests, **Playwright** for end-to-end tests.
 
 ## Setup
 
@@ -56,6 +58,11 @@ migrate). Then:
 npm run db:migrate   # applies prisma/schema.prisma to your local DB
 npm run db:generate  # regenerates the Prisma client into src/generated/prisma
 ```
+
+`prisma dev` runs PGlite, which handles only one connection at a time, so also set
+`DATABASE_POOL_MAX=1` in `.env` (already in `.env.example`). Without it, concurrent
+requests fail at random with Postgres error `08P01` ("bind message supplies N
+parameters…"). Leave it unset for a real hosted Postgres.
 
 `npx prisma dev ls` / `npx prisma dev stop` manage the local server. In production this
 points at a real hosted Postgres (Neon).
@@ -189,25 +196,81 @@ stats.ts`): cards due today (across all decks), a study streak (consecutive days
   auth-then-ownership-scoped-query pattern as `uploads`/`jobs`, verified with the same
   unauthenticated-401 check. "Export CSV" / "Export for Anki" buttons on the deck page.
 
-## A real gap: the local production build is unverified
+## Testing
 
-Be aware of this before deploying. `npm run build` (Turbopack, the real target CI and
-Vercel use) can't run at all on this dev machine -- see the Application Control policy
-note above. The `--webpack` fallback gets further but hits a separate crash (a
-`WasmHash` `TypeError` deep in webpack's own bundled code, triggered specifically
-while content-hashing the large generated Prisma client under the WASM-only SWC
-fallback) partway through the production build. **This means no production build has
-successfully completed locally in this session** — only `next dev` (which compiles
-every file individually via the same SWC/WASM transform and has never errored) and
-`vitest`/`tsc`/`eslint` (all clean) have actually run.
+```bash
+npm test            # Vitest unit tests (pure logic: SM-2, streaks, time zones, chunking, export)
+npm run test:e2e    # Playwright, against a running app on :3000 (starts `dev:webpack` if none)
+```
 
-This is very likely a non-issue in practice: the crash is inside webpack's own
-internals during a bundling step Turbopack doesn't use at all, and CI/Vercel run on
-normal Linux with real native bindings, so they use actual Turbopack, not this
-fallback path. But it genuinely hasn't been verified, and "very likely fine" isn't
-the same as tested. **First thing to do once `.github/workflows/ci.yml` is pushed
-(see below) or once you deploy to Vercel: watch that first build closely.** If it
-fails, that's real, new information -- not something this session already ruled out.
+The e2e suite needs the local database and the Inngest dev server running (see Setup).
+It covers sign-up/sign-in (incl. case-insensitive emails), deck CRUD and validation,
+studying due cards and the dashboard (run in `America/Los_Angeles` on purpose -- see
+below), CSV/Anki export incl. the unauthenticated 401, upload limits, and the real
+upload -> Inngest -> Claude pipeline reaching a visible final state. Workers are
+pinned to 1 because every test shares the single-connection local database.
+
+To run it against a production build instead of the dev server:
+
+```bash
+npm run build:webpack && npx next start -p 3000   # then, in another terminal:
+npm run test:e2e
+```
+
+## Production build: verified
+
+The production build now completes and the full e2e suite passes against it. An
+earlier session hit a `WasmHash` `TypeError` inside webpack and recorded it as an
+unexplained gap. Isolating it (building into a separate `distDir`, with and without
+webpack's persistent cache, with and without a copy of the dev server's cache) showed
+the cause: **running `next build` while `next dev` was running** -- both use `.next/`,
+the dev server rewrote files mid-build, and webpack's filesystem snapshot hashed a
+file that had vanished (`hash.update(undefined)`). Stop the dev server before
+building and it's clean. Turbopack (`npm run build`, what Vercel uses) still can't
+run on this particular machine's Application Control policy, but the app code itself
+is proven to build, type-check, and run in production mode.
+
+## Hardening pass
+
+Bugs found by reading the code critically, writing e2e tests for the edge cases, and
+running the suite against a production build -- each one fixed and covered by a test:
+
+- **Streaks and "due today" used UTC days, not the student's.** At UTC-7, studying at
+  8am Monday and 6pm Tuesday landed on UTC Monday and UTC _Wednesday_: a broken
+  streak. And a card scheduled "1 day" after a 6pm review stayed hidden until 6pm
+  the next day. Now the browser reports its IANA time zone in a cookie
+  (`src/components/time-zone-cookie.tsx`, validated server-side), streaks count
+  local calendar days, and anything due before the user's local midnight is
+  studyable today, like Anki. The date math (`src/lib/dates/time-zone.ts`) is pure
+  and tested across month/year boundaries and both DST transitions.
+- **Random 500s and failed sign-ins under concurrent load (Postgres error `08P01`).**
+  Local `prisma dev` is PGlite, which handles one connection at a time; the `pg` pool
+  opened several and their protocol messages interleaved. Fixed with an opt-in
+  `DATABASE_POOL_MAX` (1 locally, unset in production) and a single e2e worker.
+- **Sign-in completely broken under `next start`.** Auth.js rejects every request
+  with `UntrustedHost` in production mode unless it's on Vercel or `AUTH_TRUST_HOST`
+  is set. Only visible by running the e2e suite against a production build.
+- **PDFs were never actually chunked.** `unpdf` output has single newlines and no
+  blank lines, and `chunkText` only split on blank lines -- so a whole PDF went to
+  the model as one chunk. It now falls back to line breaks, then sentence ends, then
+  a hard cut, and never exceeds the chunk size.
+- **Uploads could hang or fail silently.** Vercel rejects request bodies over 4.5MB
+  with a non-JSON page, so the 15MB limit was unreachable and `res.json()` threw.
+  Now: a 4MB limit shared by client and server (checked before uploading), safe
+  JSON parsing, a failed job instead of a stuck one if the Inngest event can't be
+  sent, and a polling timeout with a helpful message instead of an endless spinner.
+- **Deck descriptions couldn't be cleared** (blank was sent as `undefined`, which
+  Prisma treats as "don't change"), and **validation errors vanished in production**
+  (Next.js strips thrown Server Action messages) -- deck actions now return
+  `{ ok, error }` and the UI shows it.
+- **`Foo@x.com` and `foo@x.com` could be two different accounts.** Emails are now
+  lowercased on sign-up and matched case-insensitively on sign-in; a concurrent
+  duplicate sign-up gets the friendly error instead of a crash.
+- Smaller: failed saves in the study session now show an error and allow a retry;
+  the flashcard is a real keyboard-accessible button; "Continue with Google" is
+  hidden unless Google OAuth is configured; signed-in users visiting the sign-in
+  page go to their decks; cancelling a deck edit discards the unsaved changes;
+  cards list in creation order.
 
 ## Getting from here to deployed
 
@@ -219,7 +282,8 @@ which is why they were left for you rather than attempted automatically):
    tracked in git yet -- the `gh` CLI's saved token lacks the `workflow` scope. Run
    `gh auth refresh -h github.com -s workflow` (approves in your browser), then
    `git add .github/workflows/ci.yml && git commit -m "Add CI workflow" && git push`.
-   This is also your first real signal on the Turbopack build question above.
+   CI will be the first run of the Turbopack build (`npm run build`), which can't run
+   on this machine -- the webpack production build is verified (see above).
 2. **Get a real `ANTHROPIC_API_KEY`** from https://console.anthropic.com/ and put it
    in `.env` (local) and your Vercel project's env vars (deployed) -- generation has
    only been tested against a mocked SDK client and, live, against a deliberately
@@ -231,6 +295,7 @@ which is why they were left for you rather than attempted automatically):
    CI/CD) to apply the schema.
 4. **Deploy to Vercel** (https://vercel.com/, free tier): import the GitHub repo, set
    `DATABASE_URL` (Neon), `ANTHROPIC_API_KEY`, `AUTH_SECRET` (reuse or regenerate),
+   **not** `DATABASE_POOL_MAX` (that's only for the local single-connection database),
    `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` (step 5) and `INNGEST_EVENT_KEY`/
    `INNGEST_SIGNING_KEY` (step 6) as environment variables.
 5. **(Optional) Set up Google OAuth** at

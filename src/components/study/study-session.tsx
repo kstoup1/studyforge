@@ -32,17 +32,22 @@ export function StudySession({
   const [revealed, setRevealed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [reviewedCount, setReviewedCount] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const current = queue[0];
 
   async function grade(value: number) {
     if (!current || submitting) return;
     setSubmitting(true);
+    setError(null);
     try {
       await submitReview({ cardId: current.id, grade: value });
       setQueue((q) => q.slice(1));
       setReviewedCount((n) => n + 1);
       setRevealed(false);
+    } catch {
+      // Card stays on screen with its answer revealed, so the student can just retry.
+      setError("Couldn't save that answer. Check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
@@ -66,9 +71,11 @@ export function StudySession({
   return (
     <div>
       <p className="mb-3 text-sm text-neutral-500">{queue.length} card(s) left in this session</p>
-      <div
+      <button
+        type="button"
         onClick={() => setRevealed(true)}
-        className="min-h-48 cursor-pointer rounded-lg border border-neutral-200 bg-white p-6"
+        aria-label={revealed ? undefined : "Reveal answer"}
+        className="block min-h-48 w-full cursor-pointer rounded-lg border border-neutral-200 bg-white p-6 text-left"
       >
         <p className="text-lg">{current.question}</p>
         {revealed ? (
@@ -76,7 +83,9 @@ export function StudySession({
         ) : (
           <p className="mt-4 text-sm text-neutral-400">Click to reveal the answer</p>
         )}
-      </div>
+      </button>
+
+      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
       {revealed && (
         <div className="mt-4 grid grid-cols-4 gap-2">
