@@ -26,6 +26,14 @@ test("emails are case-insensitive for sign-up and sign-in", async ({ page }) => 
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page.getByText("An account with that email already exists")).toBeVisible();
 
+  // A wrong password gets a clear error and a usable form.
+  await page.goto("/sign-in");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill("definitely the wrong password");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByText("Incorrect email or password")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled();
+
   // Sign in with a third casing.
   await page.goto("/sign-in");
   await expect(page.getByRole("button", { name: "Continue with Google" })).toHaveCount(0); // not configured

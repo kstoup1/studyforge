@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
+import { signInWithGoogle, signInWithPassword } from "@/actions/auth";
 
 export function SignInForm({ googleEnabled }: { googleEnabled: boolean }) {
   const router = useRouter();
@@ -17,18 +17,21 @@ export function SignInForm({ googleEnabled }: { googleEnabled: boolean }) {
     setError(null);
     setSubmitting(true);
     try {
-      const result = await signIn("credentials", { email, password, redirect: false });
-      if (result?.error) {
-        setError("Incorrect email or password");
+      const result = await signInWithPassword({ email, password });
+      if (!result.ok) {
+        setError(result.error);
+        setSubmitting(false);
         return;
       }
       router.push("/decks");
-      router.refresh();
+      router.refresh(); // re-render the server-side nav bar with the new session
+      return;
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
-    } finally {
-      setSubmitting(false);
     }
+    // Only reached on failure: on success the page is navigating away, and the button
+    // stays disabled so it can't be submitted twice.
+    setSubmitting(false);
   }
 
   return (
@@ -68,7 +71,7 @@ export function SignInForm({ googleEnabled }: { googleEnabled: boolean }) {
       {googleEnabled && (
         <div className="mt-6 border-t border-neutral-200 pt-6">
           <button
-            onClick={() => signIn("google", { callbackUrl: "/decks" })}
+            onClick={() => signInWithGoogle()}
             className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-100"
           >
             Continue with Google

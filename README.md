@@ -12,9 +12,11 @@ written to double as interview prep, not just documentation.
 ## Status
 
 Phases 0-5 done: auth, decks, the AI generation pipeline, SM-2 study sessions, the
-dashboard, and CSV/Anki export. 93 unit tests (Vitest) plus 7 Playwright end-to-end
-tests, all passing -- and the e2e suite passes against a real **production build**
-(`next build` + `next start`), not just the dev server. Remaining: deploying to
+dashboard, and CSV/Anki export. 93 unit tests (Vitest) plus 9 Playwright end-to-end
+tests, all passing -- against the dev server from a cold start _and_ against a real
+**production build** (`next build` + `next start`). That includes the full success
+path of the core feature (notes -> generated flashcards -> studied), using a local
+mock of the Anthropic API since no real key has been used yet. Remaining: deploying to
 Vercel/Neon (needs your own accounts -- see "Getting from here to deployed" below).
 See "What's built so far" for the full list and "Hardening pass" for the bugs that
 testing turned up and how each was fixed.
@@ -210,6 +212,24 @@ below), CSV/Anki export incl. the unauthenticated 401, upload limits, and the re
 upload -> Inngest -> Claude pipeline reaching a visible final state. Workers are
 pinned to 1 because every test shares the single-connection local database.
 
+**Testing successful generation without an API key.** `scripts/e2e/mock-anthropic.mjs`
+is a dependency-free stand-in for the Messages API. The app talks to it through the
+real Anthropic SDK (which honours `ANTHROPIC_BASE_URL`), so everything except the
+model itself runs for real: the SDK request, the forced `tool_use` response, zod
+validation, chunking, persistence, and studying the new cards. It records each
+request, so the tests also check what the app sent (model, `tool_choice`, and that a
+4-page PDF is split into chunks of at most 12k characters with nothing lost).
+
+```bash
+npm run mock:anthropic                                   # terminal 1, port 4010
+ANTHROPIC_BASE_URL=http://localhost:4010 npm run dev:webpack   # terminal 2
+E2E_MOCK_LLM=1 npm run test:e2e                          # terminal 3: all 9 tests
+```
+
+Without `E2E_MOCK_LLM=1` the two generation-success tests are skipped (the other
+upload test accepts either outcome, since it depends on the real key). Don't leave
+`ANTHROPIC_BASE_URL` set once you have a real key.
+
 To run it against a production build instead of the dev server:
 
 ```bash
@@ -235,6 +255,15 @@ is proven to build, type-check, and run in production mode.
 Bugs found by reading the code critically, writing e2e tests for the edge cases, and
 running the suite against a production build -- each one fixed and covered by a test:
 
+- **Sign-up could fail on a cold server with `MissingCSRF`** ("Account created, but
+  sign-in failed"). Auth.js mints a new CSRF cookie on any auth request that arrives
+  without one, so a slow `/api/auth/session` request (from the client
+  `SessionProvider`, slow because the route was compiling or cold-starting) could
+  land after the client fetched its CSRF token and overwrite the cookie. Fixed by
+  moving sign-in/up/out to Server Actions (Auth.js's server-side `signIn`/`signOut`,
+  protected by Next's own Origin check -- no token round trip to race) and making the
+  nav bar a Server Component, which also removed `SessionProvider` and its polling.
+  Verified with four back-to-back cold restarts (fresh `.next`), all green.
 - **Streaks and "due today" used UTC days, not the student's.** At UTC-7, studying at
   8am Monday and 6pm Tuesday landed on UTC Monday and UTC _Wednesday_: a broken
   streak. And a card scheduled "1 day" after a 6pm review stayed hidden until 6pm

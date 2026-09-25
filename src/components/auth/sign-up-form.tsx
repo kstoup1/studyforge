@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { signIn } from "next-auth/react";
 import { registerUser } from "@/actions/auth";
 
 export function SignUpForm() {
@@ -21,20 +20,18 @@ export function SignUpForm() {
       const result = await registerUser({ email, password, name: name || undefined });
       if (!result.ok) {
         setError(result.error);
-        return;
-      }
-      const signInResult = await signIn("credentials", { email, password, redirect: false });
-      if (signInResult?.error) {
-        setError("Account created, but sign-in failed. Try signing in manually.");
+        setSubmitting(false);
         return;
       }
       router.push("/decks");
-      router.refresh();
+      router.refresh(); // re-render the server-side nav bar with the new session
+      return;
     } catch {
       setError("Couldn't reach the server. Check your connection and try again.");
-    } finally {
-      setSubmitting(false);
     }
+    // Only reached on failure: on success the page is navigating away, and the button
+    // stays disabled so it can't be submitted twice.
+    setSubmitting(false);
   }
 
   return (
