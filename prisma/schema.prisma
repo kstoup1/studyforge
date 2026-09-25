@@ -15,17 +15,18 @@ datasource db {
 // ---------------- Auth (Auth.js / NextAuth Prisma Adapter shape) ----------------
 
 model User {
-  id             String      @id @default(cuid())
-  email          String      @unique
-  emailVerified  DateTime?
-  hashedPassword String?
-  name           String?
-  image          String?
-  createdAt      DateTime    @default(now())
-  decks          Deck[]
-  reviewLogs     ReviewLog[]
-  accounts       Account[]
-  sessions       Session[]
+  id               String            @id @default(cuid())
+  email            String            @unique
+  emailVerified    DateTime?
+  hashedPassword   String?
+  name             String?
+  image            String?
+  createdAt        DateTime          @default(now())
+  decks            Deck[]
+  reviewLogs       ReviewLog[]
+  accounts         Account[]
+  sessions         Session[]
+  canvasConnection CanvasConnection?
 }
 
 model Account {
@@ -62,6 +63,20 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+/// A user's link to their school's Canvas LMS, via a personal access token they
+/// generated in Canvas. The token is never stored in plaintext: AES-256-GCM with a
+/// key derived from AUTH_SECRET (src/lib/canvas/token-crypto.ts). Read-only use.
+model CanvasConnection {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  baseUrl        String
+  encryptedToken String   @db.Text
+  canvasUserName String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 // ---------------- Core domain ----------------
 
 model Deck {
@@ -81,6 +96,8 @@ model Deck {
 enum SourceType {
   PDF
   PASTED_TEXT
+  CANVAS_FILE
+  CANVAS_PAGE
 }
 
 /// One uploaded/pasted source document that cards were (or will be) generated from.

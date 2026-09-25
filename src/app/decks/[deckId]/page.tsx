@@ -33,6 +33,12 @@ export default async function DeckPage(props: PageProps<"/decks/[deckId]">) {
         >
           + Add notes
         </Link>
+        <Link
+          href={`/decks/${deck.id}/canvas`}
+          className="inline-block rounded-md border border-neutral-300 px-4 py-2 text-sm hover:bg-neutral-100"
+        >
+          Import from Canvas
+        </Link>
         {deck.cards.length > 0 && (
           <Link
             href={`/decks/${deck.id}/study`}

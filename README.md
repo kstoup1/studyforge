@@ -12,8 +12,9 @@ written to double as interview prep, not just documentation.
 ## Status
 
 Phases 0-5 done: auth, decks, the AI generation pipeline, SM-2 study sessions, the
-dashboard, and CSV/Anki export. 93 unit tests (Vitest) plus 9 Playwright end-to-end
-tests, all passing -- against the dev server from a cold start _and_ against a real
+dashboard, and CSV/Anki export -- plus a **Canvas LMS integration** (connect your
+school's Canvas and turn lecture PDFs and course pages into flashcards). 111 unit
+tests (Vitest) plus 10 Playwright end-to-end tests, all passing -- against the dev server from a cold start _and_ against a real
 **production build** (`next build` + `next start`). That includes the full success
 path of the core feature (notes -> generated flashcards -> studied), using a local
 mock of the Anthropic API since no real key has been used yet. Remaining: deploying to
@@ -198,6 +199,33 @@ stats.ts`): cards due today (across all decks), a study streak (consecutive days
   auth-then-ownership-scoped-query pattern as `uploads`/`jobs`, verified with the same
   unauthenticated-401 check. "Export CSV" / "Export for Anki" buttons on the deck page.
 
+## Canvas integration
+
+Students connect their school's Canvas with a **personal access token** (Canvas →
+Account → Settings → _+ New Access Token_) on the **Canvas** page. Then any deck has
+**Import from Canvas**: pick a course, check lecture PDFs and course pages (grouped by
+module), and each becomes its own generation job in the existing pipeline.
+
+- **Read-only, minimal client** (`src/lib/canvas/client.ts`): users/self, courses,
+  modules, files, pages, file download. Nothing is ever written to Canvas.
+- **Token security**: encrypted at rest with AES-256-GCM, key derived from
+  `AUTH_SECRET` via HKDF (`src/lib/canvas/token-crypto.ts`); verified against Canvas
+  before it's saved; sent _only_ to the connected Canvas origin -- pagination links to
+  other hosts are refused, and file downloads drop the `Authorization` header when
+  Canvas redirects to its separate file-storage domain.
+- **SSRF guard**: the Canvas address must be https and a public hostname (no
+  localhost, IPs, `.local`/`.internal`). The only escape hatch,
+  `CANVAS_ALLOW_INSECURE_URLS=1`, is for the local fake Canvas and is ignored in
+  production.
+- **Real-world Canvas quirks handled**: courses are paginated (Link headers); many
+  instructors hide the Files tab from students (403), so materials are discovered
+  through modules too; locked files are skipped; downloads are size-capped at 25MB.
+- **Why personal tokens, not OAuth**: a "Connect with Canvas" OAuth button needs a
+  developer key issued by each school's Canvas admins -- not something a student
+  project can get. Tokens work at any school that allows them (Auburn does).
+- Only PDFs and Canvas pages are imported for now; PowerPoint files are listed but
+  disabled.
+
 ## Testing
 
 ```bash
@@ -211,6 +239,12 @@ studying due cards and the dashboard (run in `America/Los_Angeles` on purpose --
 below), CSV/Anki export incl. the unauthenticated 401, upload limits, and the real
 upload -> Inngest -> Claude pipeline reaching a visible final state. Workers are
 pinned to 1 because every test shares the single-connection local database.
+
+**Canvas without a real Canvas.** `scripts/e2e/mock-canvas.mjs` is a fake Canvas (port 4020) plus a separate fake file-storage origin (4021), mirroring the real API shapes
+and quirks above; it logs the `Authorization` header of every request, so the e2e test
+proves the token never reaches the storage origin. Run it alongside the Anthropic mock
+(`npm run mock:canvas`), start the app with `CANVAS_ALLOW_INSECURE_URLS=1` as well, and
+add `E2E_MOCK_CANVAS=1` to the test command.
 
 **Testing successful generation without an API key.** `scripts/e2e/mock-anthropic.mjs`
 is a dependency-free stand-in for the Messages API. The app talks to it through the
@@ -300,6 +334,18 @@ running the suite against a production build -- each one fixed and covered by a 
   hidden unless Google OAuth is configured; signed-in users visiting the sign-in
   page go to their decks; cancelling a deck edit discards the unsaved changes;
   cards list in creation order.
+
+### Creating migrations with `prisma dev`
+
+`prisma migrate dev` fails against the local PGlite server (its shadow-database step
+re-applies old migrations onto the same database: `type "SourceType" already exists`).
+Create migrations by diffing instead, with the dev server stopped (one connection):
+
+```bash
+mkdir prisma/migrations/<timestamp>_<name>
+npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script > prisma/migrations/<timestamp>_<name>/migration.sql
+npx prisma migrate deploy && npx prisma generate
+```
 
 ## Getting from here to deployed
 

@@ -23,6 +23,9 @@ export async function NavBar() {
               <Link href="/decks" className="text-neutral-700 hover:text-neutral-900">
                 My decks
               </Link>
+              <Link href="/settings/canvas" className="text-neutral-700 hover:text-neutral-900">
+                Canvas
+              </Link>
               <span className="text-neutral-400">{session.user.email}</span>
               <SignOutButton />
             </>

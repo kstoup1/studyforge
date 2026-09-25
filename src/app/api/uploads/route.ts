@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { extractPdfText, PdfExtractionError } from "@/lib/pdf/extract-text";
-import { inngest, NOTES_UPLOADED_EVENT } from "@/inngest/client";
+import { enqueueGeneration, EnqueueError } from "@/lib/generation/enqueue";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "@/lib/uploads/limits";
 
 export const runtime = "nodejs"; // PDF parsing needs Node APIs, not the Edge runtime
@@ -64,28 +64,18 @@ export async function POST(req: Request) {
     );
   }
 
-  const noteSet = await prisma.noteSet.create({
-    data: { deckId, sourceType, originalFilename, extractedText },
-  });
-  const job = await prisma.generationJob.create({
-    data: { noteSetId: noteSet.id, status: "PENDING" },
-  });
-
   try {
-    await inngest.send({ name: NOTES_UPLOADED_EVENT, data: { generationJobId: job.id } });
-  } catch (err) {
-    // If the event never reaches Inngest, nothing will ever pick this job up -- mark
-    // it failed now instead of leaving it PENDING forever with the client polling.
-    console.error("Failed to enqueue flashcard generation", err);
-    await prisma.generationJob.update({
-      where: { id: job.id },
-      data: { status: "FAILED", errorMessage: "Couldn't start generation" },
+    const { jobId } = await enqueueGeneration({
+      deckId,
+      sourceType,
+      originalFilename,
+      extractedText,
     });
-    return NextResponse.json(
-      { error: "Couldn't start flashcard generation right now. Please try again in a minute." },
-      { status: 503 },
-    );
+    return NextResponse.json({ jobId }, { status: 202 });
+  } catch (err) {
+    if (err instanceof EnqueueError) {
+      return NextResponse.json({ error: err.message }, { status: 503 });
+    }
+    throw err;
   }
-
-  return NextResponse.json({ jobId: job.id }, { status: 202 });
 }
