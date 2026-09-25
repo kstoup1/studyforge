@@ -29,8 +29,9 @@ testing turned up and how each was fixed.
 - **Postgres via Prisma 7**, using the new driver-adapter pattern (`@prisma/adapter-pg`)
   — no `DATABASE_URL` in the schema file anymore; the adapter is constructed explicitly
   in `src/lib/db.ts`.
-- **Anthropic API (Claude)** for flashcard generation, behind a swappable interface
-  (`src/lib/llm/`) so the provider isn't hard-wired into the rest of the app.
+- **Pluggable LLM backend** for flashcard generation (`src/lib/llm/`): **Claude**
+  (Anthropic API) or a **local model via Ollama** (free, no API key, notes never
+  leave the machine). See "Choosing the AI" below.
 - **Inngest** for background job processing (note extraction + generation runs as a
   durable, retryable, step-based pipeline instead of blocking a request — see "Why
   these choices" below).
@@ -198,6 +199,29 @@ stats.ts`): cards due today (across all decks), a study streak (consecutive days
   11 unit tests covering the escaping edge cases. The route handler reuses the same
   auth-then-ownership-scoped-query pattern as `uploads`/`jobs`, verified with the same
   unauthenticated-401 check. "Export CSV" / "Export for Anki" buttons on the deck page.
+
+## Choosing the AI
+
+`LLM_PROVIDER` in `.env` picks who writes the flashcards; leave it empty to use Claude
+when `ANTHROPIC_API_KEY` is set and Ollama otherwise.
+
+|                 | Claude (`anthropic`)             | Ollama (`ollama`)                                            |
+| --------------- | -------------------------------- | ------------------------------------------------------------ |
+| Cost            | Paid per use (cents per lecture) | Free                                                         |
+| Setup           | API key                          | [Install Ollama](https://ollama.com), `ollama pull llama3.1` |
+| Privacy         | Notes sent to Anthropic          | Notes never leave your machine                               |
+| Works on Vercel | Yes                              | No -- needs a machine running Ollama                         |
+
+Both implement the same `FlashcardGenerator` interface and share chunking, dedupe,
+the card cap, and zod validation (`src/lib/llm/chunking.ts`). Claude gets structured
+output via forced tool use; Ollama via its `format` JSON-schema option, which
+constrains decoding to valid JSON -- much more reliable with an 8B model than prompt
+instructions alone. Ollama uses smaller chunks (6k chars) and an explicit 8k context
+window (its default is far smaller), and retries a malformed sample once.
+
+Measured on an RTX 3070 with `llama3.1` (8B), on real lecture PDFs imported from
+Canvas: 8 cards in 8-16s for ~3-4k-character slide decks, 33 cards in 33s for a
+19k-character lecture.
 
 ## Canvas integration
 

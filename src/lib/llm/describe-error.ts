@@ -9,6 +9,8 @@
  */
 export function describeGenerationError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
+  // Messages written for students by the Ollama generator (OllamaError) -- pass through.
+  if (/^Ollama (isn't|doesn't|took|returned)/.test(message)) return message;
   const statusProp = (err as { status?: unknown } | null)?.status;
   const status =
     typeof statusProp === "number" ? statusProp : Number(message.match(/^(\d{3})\b/)?.[1]);
