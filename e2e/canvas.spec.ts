@@ -16,7 +16,7 @@ const email = uniqueEmail("canvas");
 
 test.afterAll(() => deleteUser(email));
 
-test("connect Canvas, import a lecture PDF and a page, and get flashcards", async ({
+test("connect Canvas, import a lecture PDF, PowerPoint slides and a page, and get flashcards", async ({
   page,
   request,
 }) => {
@@ -50,20 +50,26 @@ test("connect Canvas, import a lecture PDF and a page, and get flashcards", asyn
   const pdf = page.getByLabel(/Lecture 3 - Cellular Respiration\.pdf/);
   const reading = page.getByLabel(/Photosynthesis summary/);
   const slides = page.getByLabel(/Lecture 3 slides\.pptx/);
-  await expect(slides).toBeDisabled(); // unsupported type can't be picked
+  await expect(page.getByLabel(/Syllabus\.docx/)).toBeDisabled();
+  await expect(slides).toBeEnabled();
   await pdf.check();
   await reading.check();
-  await page.getByRole("button", { name: "Import 2 selected" }).click();
+  await slides.check();
+  await page.getByRole("button", { name: "Import 3 selected" }).click();
 
   // Each item runs through the real pipeline and reports its own result.
-  await expect(page.getByText(/\d+ flashcards? created/)).toHaveCount(2, { timeout: 90_000 });
+  await expect(page.getByText(/\d+ flashcards? created/)).toHaveCount(3, { timeout: 90_000 });
 
   await page.getByRole("link", { name: "View the deck" }).click();
-  // Cards came from the PDF's text and from the page's HTML (entities decoded).
+  // Cards came from the PDF, slide text and page HTML (entities decoded).
   await expect(
     page.getByText("Glycolysis splits glucose into two pyruvate molecules in the cytoplasm."),
   ).toBeVisible();
   await expect(page.getByText("The light reactions split water & release oxygen.")).toBeVisible();
+
+  await expect(
+    page.getByText("ATP synthase is powered by the proton gradient across the inner membrane."),
+  ).toBeVisible();
 
   // --- The token went to Canvas, never to the file-storage origin it redirected to.
   const log: { server: string; path: string; auth: string | null }[] = await (

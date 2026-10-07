@@ -3,6 +3,7 @@ import {
   CanvasClient,
   CanvasError,
   htmlToText,
+  isSupportedFile,
   MAX_CANVAS_FILE_BYTES,
   normalizeCanvasUrl,
   parseNextLink,
@@ -142,7 +143,7 @@ describe("CanvasClient", () => {
     expect(materials).toEqual([
       expect.objectContaining({ kind: "file", ref: "11", moduleName: "Week 1", supported: true }),
       expect.objectContaining({ kind: "page", ref: "reading-notes", supported: true }),
-      expect.objectContaining({ kind: "file", ref: "12", supported: false }), // pptx not yet
+      expect.objectContaining({ kind: "file", ref: "12", supported: true }),
     ]);
 
     const withFiles = fakeFetch({
@@ -211,5 +212,20 @@ describe("CanvasClient", () => {
     await expect(new CanvasClient(BASE, TOKEN, impl).downloadFile(5, "99")).rejects.toThrow(
       /too large/,
     );
+  });
+});
+
+describe("isSupportedFile", () => {
+  it.each([
+    ["application/pdf", "lecture", true],
+    [null, "lecture.PDF", true],
+    ["application/vnd.openxmlformats-officedocument.presentationml.presentation", "slides", true],
+    [null, "slides.PPTX", true],
+    ["application/octet-stream", "slides.pptx", false],
+    [null, "slides.ppt", false],
+    ["application/vnd.ms-powerpoint", "slides.ppt", false],
+    [null, "reading.txt", false],
+  ])("checks %s / %s", (type, title, expected) => {
+    expect(isSupportedFile(type, title)).toBe(expected);
   });
 });

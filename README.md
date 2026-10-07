@@ -247,8 +247,7 @@ module), and each becomes its own generation job in the existing pipeline.
 - **Why personal tokens, not OAuth**: a "Connect with Canvas" OAuth button needs a
   developer key issued by each school's Canvas admins -- not something a student
   project can get. Tokens work at any school that allows them (Auburn does).
-- Only PDFs and Canvas pages are imported for now; PowerPoint files are listed but
-  disabled.
+- PDFs, PowerPoint (.pptx) files and Canvas pages can be imported.
 
 ## Testing
 

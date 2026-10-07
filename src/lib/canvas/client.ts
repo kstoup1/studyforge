@@ -13,6 +13,9 @@
  * - Every request has a timeout; downloads have a size cap.
  */
 
+export const PPTX_CONTENT_TYPE =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
 const REQUEST_TIMEOUT_MS = 20_000;
 export const MAX_CANVAS_FILE_BYTES = 25 * 1024 * 1024; // server-side download, not a request body
 /** Per import request: each item is downloaded + extracted within one request. */
@@ -44,7 +47,7 @@ export interface CanvasMaterial {
   moduleName: string | null;
   contentType: string | null;
   size: number | null;
-  /** Whether StudyForge can extract text from it (PDFs and pages, for now). */
+  /** Whether StudyForge can extract text from it (PDFs, PowerPoints (.pptx), and pages). */
   supported: boolean;
 }
 
@@ -137,7 +140,11 @@ export function htmlToText(html: string): string {
 }
 
 export function isSupportedFile(contentType: string | null, title: string): boolean {
-  return contentType === "application/pdf" || (!contentType && /\.pdf$/i.test(title));
+  return (
+    contentType === "application/pdf" ||
+    contentType === PPTX_CONTENT_TYPE ||
+    (!contentType && /\.(pdf|pptx)$/i.test(title))
+  );
 }
 
 // ---------------------------------------------------------------- client

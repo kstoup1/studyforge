@@ -1,6 +1,7 @@
 // A fake Canvas LMS for end-to-end tests of the Canvas import, so they never touch a
 // real school's Canvas or a real student's token. Mirrors the real API shapes the app
 // uses (src/lib/canvas/client.ts), including the awkward parts:
+//   - PDF and PPTX files are served as real in-memory documents
 //   - courses are paginated via a Link header
 //   - the Files tab is hidden from students (403), so files are only reachable
 //     through modules
@@ -12,6 +13,7 @@
 //
 // Test hook: GET http://localhost:4020/__requests -> [{ server, path, auth }]
 import http from "node:http";
+import { crc32, deflateRawSync } from "node:zlib";
 
 const CANVAS_PORT = 4020;
 const STORAGE_PORT = 4021;
@@ -38,6 +40,90 @@ const LECTURE_PDF = buildPdf([
   "Oxidative phosphorylation makes most of the cell's ATP.",
 ]);
 
+function buildPptx(slides) {
+  const p = "http://schemas.openxmlformats.org/presentationml/2006/main";
+  const a = "http://schemas.openxmlformats.org/drawingml/2006/main";
+  const r = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const rels = "http://schemas.openxmlformats.org/package/2006/relationships";
+  const escape = (text) =>
+    text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  const entries = [
+    {
+      name: "[Content_Types].xml",
+      text: `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>${slides.map((_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("")}</Types>`,
+      stored: true,
+    },
+    {
+      name: "_rels/.rels",
+      text: `<Relationships xmlns="${rels}"><Relationship Id="rId1" Type="${r}/officeDocument" Target="ppt/presentation.xml"/></Relationships>`,
+    },
+    {
+      name: "ppt/presentation.xml",
+      text: `<p:presentation xmlns:p="${p}" xmlns:r="${r}"><p:sldIdLst>${slides.map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 1}"/>`).join("")}</p:sldIdLst><p:sldSz cx="9144000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>`,
+    },
+    {
+      name: "ppt/_rels/presentation.xml.rels",
+      text: `<Relationships xmlns="${rels}">${slides.map((_, i) => `<Relationship Id="rId${i + 1}" Type="${r}/slide" Target="slides/slide${i + 1}.xml"/>`).join("")}</Relationships>`,
+    },
+    ...slides.map((paragraphs, i) => ({
+      name: `ppt/slides/slide${i + 1}.xml`,
+      text: `<p:sld xmlns:p="${p}" xmlns:a="${a}"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/><p:sp><p:nvSpPr><p:cNvPr id="2" name="Text"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/>${paragraphs.map((text) => `<a:p><a:r><a:t>${escape(text)}</a:t></a:r></a:p>`).join("")}</p:txBody></p:sp></p:spTree></p:cSld></p:sld>`,
+    })),
+  ];
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name);
+    const data = Buffer.from(entry.text);
+    const method = entry.stored ? 0 : 8;
+    const compressed = method === 0 ? data : deflateRawSync(data);
+    const checksum = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(checksum, 14);
+    local.writeUInt32LE(compressed.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(checksum, 16);
+    central.writeUInt32LE(compressed.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    localParts.push(local, name, compressed);
+    centralParts.push(central, name);
+    offset += local.length + name.length + compressed.length;
+  }
+  const directory = Buffer.concat(centralParts);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...localParts, directory, end]);
+}
+
+const LECTURE_PPTX = buildPptx([
+  [
+    "Lecture 3 slides: ATP synthase.",
+    "ATP synthase is powered by the proton gradient across the inner membrane.",
+  ],
+  ["Each NADH yields about 2.5 ATP during oxidative phosphorylation."],
+]);
+
 const COURSE = 101;
 const modules = [
   {
@@ -48,11 +134,18 @@ const modules = [
       { type: "File", title: "Lecture 3 - Cellular Respiration.pdf", content_id: 201 },
       { type: "Page", title: "Photosynthesis summary", page_url: "photosynthesis-summary" },
       { type: "File", title: "Lecture 3 slides.pptx", content_id: 203 },
+      { type: "File", title: "Syllabus.docx", content_id: 204 },
       { type: "Assignment", title: "Problem set 3" },
     ],
   },
 ];
 const files = {
+  204: {
+    id: 204,
+    display_name: "Syllabus.docx",
+    filename: "syllabus.docx",
+    "content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  },
   201: {
     id: 201,
     display_name: "Lecture 3 - Cellular Respiration.pdf",
@@ -66,7 +159,7 @@ const files = {
     display_name: "Lecture 3 slides.pptx",
     filename: "slides.pptx",
     "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    size: 1234,
+    size: LECTURE_PPTX.length,
     url: `http://localhost:${CANVAS_PORT}/files/203/download?download_frd=1&verifier=v203`,
   },
 };
@@ -127,6 +220,10 @@ const storage = http.createServer((req, res) => {
   if (url.pathname === "/storage/201") {
     res.writeHead(200, { "content-type": "application/pdf" });
     return res.end(LECTURE_PDF);
+  }
+  if (url.pathname === "/storage/203") {
+    res.writeHead(200, { "content-type": files[203]["content-type"] });
+    return res.end(LECTURE_PPTX);
   }
   res.writeHead(404);
   res.end();

@@ -8,6 +8,7 @@ import {
   CanvasClient,
   CanvasError,
   MAX_ITEMS_PER_IMPORT,
+  PPTX_CONTENT_TYPE,
   normalizeCanvasUrl,
   type CanvasCourse,
   type CanvasMaterial,
@@ -15,6 +16,7 @@ import {
 import { decryptToken, encryptToken, TokenDecryptionError } from "@/lib/canvas/token-crypto";
 import { enqueueGeneration, EnqueueError } from "@/lib/generation/enqueue";
 import { extractPdfText, PdfExtractionError } from "@/lib/pdf/extract-text";
+import { extractPptxText, looksLikeZip, PptxExtractionError } from "@/lib/pptx/extract-text";
 
 // Like the deck actions, these return { ok, error } instead of throwing: Next.js
 // strips thrown Server Action messages in production, and every Canvas failure
@@ -36,6 +38,7 @@ function describe(err: unknown): string {
   if (
     err instanceof CanvasError ||
     err instanceof PdfExtractionError ||
+    err instanceof PptxExtractionError ||
     err instanceof EnqueueError
   ) {
     return err.message;
@@ -184,12 +187,18 @@ export async function importFromCanvas(input: unknown): Promise<Result<ImportIte
         const file = await client.downloadFile(courseId, item.ref);
         title = file.filename || title;
         const looksLikePdf = new TextDecoder().decode(file.bytes.subarray(0, 5)) === "%PDF-";
-        if (!looksLikePdf) {
+        if (looksLikePdf) {
+          text = await extractPdfText(file.bytes);
+        } else if (
+          looksLikeZip(file.bytes) &&
+          (file.contentType === PPTX_CONTENT_TYPE || /\.pptx$/i.test(file.filename))
+        ) {
+          text = await extractPptxText(file.bytes);
+        } else {
           throw new CanvasError(
-            `"${title}" isn't a PDF -- only PDFs and Canvas pages are supported.`,
+            `"${title}" isn't a supported file -- only PDFs, PowerPoint (.pptx) files and Canvas pages can be imported.`,
           );
         }
-        text = await extractPdfText(file.bytes);
       }
       if (!text.trim()) throw new CanvasError(`"${title}" has no text to make flashcards from.`);
 

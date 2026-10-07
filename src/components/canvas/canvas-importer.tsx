@@ -188,7 +188,7 @@ export function CanvasImporter({ deckId }: { deckId: string }) {
                   <span>{m.title}</span>
                   <span className="text-xs text-neutral-400">
                     {m.kind === "page" ? "Page" : formatSize(m.size)}
-                    {!m.supported && " · only PDFs and pages are supported"}
+                    {!m.supported && " · only PDFs, .pptx slides and pages are supported"}
                   </span>
                 </label>
               </li>
