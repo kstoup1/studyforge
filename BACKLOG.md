@@ -60,9 +60,6 @@ Top of **Todo** = next up. Each item has an acceptance check. `/next` takes the 
     _Accept:_ one real course imports without errors; any bugs found are added here.
 16. **Deploy prep (Vercel + Neon)** — env var list, hosted LLM provider choice, build settings.
     _Accept:_ `docs/DEPLOY.md` with exact steps; `npm run build:webpack` passes with prod-like env.
-17. **Fix CI branch trigger** — `.github/workflows/ci.yml` triggers on `main`, but the repo's branch is
-    `master`, so CI never runs. Also consider running `npm run verify` there instead of separate steps.
-    _Accept:_ CI triggers on push/PR to master; the workflow is valid YAML.
 
 ## In Progress
 
@@ -76,3 +73,6 @@ Top of **Todo** = next up. Each item has an acceptance check. `/next` takes the 
   skill point to it. Verified: clean run exits 0; a deliberate type error exits 1 and names only `types`.
   Also fixed Prettier failures in 3 markdown files. A stale `.next/` caused a webpack WasmHash crash and
   was cleared.
+- **Fix CI branch trigger** — Claude. `ci.yml` push/PR now target `master`. Verified: YAML parses,
+  Prettier passes, `verify:fast` passes. A first real CI run happens on the next push. Steps left as
+  they are (CI builds with `next build` like Vercel, not `build:webpack`).
