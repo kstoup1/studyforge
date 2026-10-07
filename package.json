@@ -14,6 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "verify": "node scripts/verify.mjs",
+    "verify:fast": "node scripts/verify.mjs --no-build",
     "mock:anthropic": "node scripts/e2e/mock-anthropic.mjs",
     "mock:canvas": "node scripts/e2e/mock-canvas.mjs",
     "db:migrate": "prisma migrate dev",
